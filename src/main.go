@@ -83,8 +83,9 @@ func main() {
 
 	app.Use(func(c *fiber.Ctx) error {
 		fmt.Printf("Request path: %s\n", c.Path())
-		switch c.Path() {
-		case "/login", "/hello":
+		path := c.Path()
+		// Skip auth for login-related endpoints and hello
+		if path == "/hello" || path == "/login" || strings.HasPrefix(path, "/login/") {
 			return c.Next()
 		}
 
@@ -98,8 +99,9 @@ func main() {
 	})
 
 	app.Use(func(c *fiber.Ctx) error {
-		switch c.Path() {
-		case "/hello":
+		path := c.Path()
+		// Skip auth for login-related endpoints and hello
+		if path == "/hello" || path == "/login" || strings.HasPrefix(path, "/login/") {
 			return c.Next()
 		}
 
@@ -174,8 +176,9 @@ func main() {
 
 	api := app.Group("/", func(c *fiber.Ctx) error {
 		fmt.Printf("Request path: %s\n", c.Path())
-		switch c.Path() {
-		case "/login", "/hello":
+		path := c.Path()
+		// Skip auth for login-related endpoints and hello
+		if path == "/hello" || path == "/login" || strings.HasPrefix(path, "/login/") {
 			return c.Next()
 		}
 		token := c.Get("X-CSRF-Token")
@@ -193,6 +196,121 @@ func main() {
 		return c.JSON(fiber.Map{"message": "Hello, World!"})
 	})
 
+	// Step 1: Email lookup - validates email and returns identifier/digest or captcha
+	app.Post("/login/lookup", func(c *fiber.Ctx) error {
+		var body struct {
+			Email string `json:"email"`
+		}
+
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid JSON body",
+			})
+		}
+
+		if body.Email == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Missing email",
+			})
+		}
+
+		lf := &handlers.LoginFetcher{}
+		result, err := lf.Lookup(body.Email)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Fetch captcha image by cdigest
+	app.Get("/login/captcha/:cdigest", func(c *fiber.Ctx) error {
+		cdigest := c.Params("cdigest")
+		if cdigest == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Missing cdigest parameter",
+			})
+		}
+
+		lf := &handlers.LoginFetcher{}
+		image, err := lf.FetchCaptcha(cdigest)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"image":   image,
+			"cdigest": cdigest,
+		})
+	})
+
+	// Verify captcha and get new lookup data (identifier/digest)
+	app.Post("/login/captcha", func(c *fiber.Ctx) error {
+		var body struct {
+			Username string `json:"username"`
+			Cdigest  string `json:"cdigest"`
+			Captcha  string `json:"captcha"`
+		}
+
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid JSON body",
+			})
+		}
+
+		if body.Username == "" || body.Cdigest == "" || body.Captcha == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Missing username, cdigest, or captcha",
+			})
+		}
+
+		lf := &handlers.LoginFetcher{}
+		result, err := lf.CaptchaVerify(body.Username, body.Cdigest, body.Captcha)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Step 2: Password verification - uses identifier/digest from lookup
+	app.Post("/login/password", func(c *fiber.Ctx) error {
+		var body struct {
+			Identifier string `json:"identifier"`
+			Digest     string `json:"digest"`
+			Password   string `json:"password"`
+		}
+
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid JSON body",
+			})
+		}
+
+		if body.Identifier == "" || body.Digest == "" || body.Password == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Missing identifier, digest, or password",
+			})
+		}
+
+		lf := &handlers.LoginFetcher{}
+		result, err := lf.VerifyPassword(body.Identifier, body.Digest, body.Password)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Legacy /login endpoint for backwards compatibility
 	app.Post("/login", func(c *fiber.Ctx) error {
 		var creds struct {
 			Username string  `json:"account"`
