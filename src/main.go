@@ -82,7 +82,6 @@ func main() {
 	}))
 
 	app.Use(func(c *fiber.Ctx) error {
-		fmt.Printf("Request path: %s\n", c.Path())
 		switch c.Path() {
 		case "/login", "/hello":
 			return c.Next()
@@ -173,7 +172,6 @@ func main() {
 	}
 
 	api := app.Group("/", func(c *fiber.Ctx) error {
-		fmt.Printf("Request path: %s\n", c.Path())
 		switch c.Path() {
 		case "/login", "/hello":
 			return c.Next()
@@ -332,7 +330,6 @@ func main() {
 			cachedData["attendance"] != nil &&
 			cachedData["marks"] != nil {
 
-			fmt.Print("I mean cached?")
 			// Always fetch ophour from db and add to cachedData
 			ophour, err := db.GetOphourByToken(encodedToken)
 			if err == nil && ophour != "" {
@@ -341,7 +338,6 @@ func main() {
 
 			go func() {
 				data, err := fetchAllData(token)
-				fmt.Print(data)
 				if err != nil {
 					return
 				}
@@ -439,12 +435,6 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 			return nil, r.err
 		}
 
-		log.Printf(
-			"fetchAllData success | key=%s | type=%T",
-			r.key,
-			r.data,
-		)
-
 		data[r.key] = r.data
 	}
 
@@ -468,8 +458,6 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 			data["ophour"] = ophour
 		}
 	}
-
-	log.Printf("fetchAllData final response: %+v", data)
 
 	return data, nil
 }
