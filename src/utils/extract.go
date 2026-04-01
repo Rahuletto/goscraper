@@ -13,13 +13,21 @@ func ConvertHexToHTML(hexString string) string {
 	}
 
 	re := regexp.MustCompile(`\\x([0-9A-Fa-f]{2})`)
-	return re.ReplaceAllStringFunc(hexString, func(match string) string {
+	result := re.ReplaceAllStringFunc(hexString, func(match string) string {
 		hex := match[2:] // Remove \x prefix
 		if val, err := strconv.ParseInt(hex, 16, 32); err == nil {
 			return string(rune(val))
 		}
 		return match
 	})
+
+	// Unescape remaining backslash sequences (e.g. \- \/ \')
+	result = strings.ReplaceAll(result, `\-`, "-")
+	result = strings.ReplaceAll(result, `\/`, "/")
+	result = strings.ReplaceAll(result, `\'`, "'")
+	result = strings.ReplaceAll(result, `\\`, `\`)
+
+	return result
 }
 
 func DecodeHTMLEntities(encodedString string) string {
