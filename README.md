@@ -79,8 +79,11 @@ Environment variables are handled by the monorepo. Please refer to the main repo
 
 ---
 
-### WHEN DEPLOYING
-Go to `globals/DevMode` and set the variable to false
+### WHEN DEVELOPING LOCALLY
+`globals/DevMode` defaults to `false`, which is what deployments need: while it
+is true the Authorization middleware in `main.go` is skipped entirely and every
+route answers without a token. Set it to `true` while working locally, and keep
+it out of your commits.
 
 ---
 
