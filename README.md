@@ -40,9 +40,16 @@ create table public.gocal (
   day text null,
   "order" text null,
   event text null,
-  created_at numeric null
+  created_at numeric null,
+  constraint gocal_month_date_key unique ("month", "date")
 );
 ```
+
+The unique constraint is what makes writes idempotent. `/calendar` only writes
+when `gocal` is empty and does so from a goroutine, so two requests arriving
+before either finishes both see an empty table and both insert the whole
+calendar. `SetEvent` upserts on `(month, date)`, which needs this constraint to
+resolve against.
 
 #### Set up CRON Jobs
 
@@ -69,9 +76,14 @@ $$ LANGUAGE plpgsql SECURITY INVOKER;
 select
   cron.schedule (
     '0 0 * * *',
-    'SELECT delete_old_calendar_events()'
+    'SELECT delete_from_gocal()'
   );
 ```
+
+> [!IMPORTANT]
+> This job is the only thing that refreshes the calendar. `/calendar` rescrapes
+> solely when `gocal` is empty, so without it an instance keeps serving the
+> planner it first fetched and never picks up a new semester.
 
 ### 2. Environment Variables
 

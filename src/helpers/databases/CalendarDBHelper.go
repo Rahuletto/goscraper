@@ -51,8 +51,13 @@ type CalendarEvent struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// SetEvent upserts on (month, date). /calendar only writes when gocal is empty
+// and does so from a goroutine, so two requests arriving before either finishes
+// both see an empty table and both insert the whole calendar, storing every day
+// twice. Upserting makes the write idempotent; it needs the unique index on
+// (month, date) documented in the README.
 func (h *CalendarDatabaseHelper) SetEvent(event CalendarEvent) error {
-	_, _, err := h.client.From("gocal").Insert(event, false, "", "", "").Execute()
+	_, _, err := h.client.From("gocal").Insert(event, true, "month,date", "", "").Execute()
 	return err
 }
 
