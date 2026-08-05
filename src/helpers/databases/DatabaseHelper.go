@@ -133,7 +133,7 @@ func (db *DatabaseHelper) ReadData(table string, query map[string]interface{}) (
 		}
 	}
 
-	_, _, err := db.client.From(table).Select("*", "", false).Match(queryAsString).Execute()
+	_, err := db.client.From(table).Select("*", "", false).Match(queryAsString).ExecuteTo(&results)
 	if err != nil {
 		return nil, err
 	}

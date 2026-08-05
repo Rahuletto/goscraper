@@ -39,7 +39,7 @@ func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
-	req.SetRequestURI("https://academia.srmist.edu.in/srm_university/academia-academic-services/page/Academic_Planner_2025_26_EVEN")
+	req.SetRequestURI("https://academia.srmist.edu.in/srm_university/academia-academic-services/page/" + PlannerPage(c.date))
 	req.Header.SetMethod("GET")
 	req.Header.Set("accept", "*/*")
 	req.Header.Set("accept-language", "en-US,en;q=0.9")
@@ -155,43 +155,7 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	// Sort the calendar data
 	sortedData := SortCalendarData(data)
 
-	// Find current month entry
-	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-	currentMonthName := monthNames[c.date.Month()-1]
-
-	var monthEntry types.CalendarMonth
-	var monthIndex int
-	for i, entry := range sortedData {
-		if strings.Contains(entry.Month, currentMonthName) {
-			monthEntry = entry
-			monthIndex = i
-			break
-		}
-	}
-
-	if monthEntry.Month == "" {
-		monthEntry = sortedData[0]
-		monthIndex = 0
-	}
-
-	var today, tomorrow *types.Day
-	if len(monthEntry.Days) > 0 {
-		todayIndex := c.date.Day() - 1
-		if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
-			today = &monthEntry.Days[todayIndex]
-
-			// Get tomorrow's date
-			tomorrowIndex := todayIndex + 1
-			if tomorrowIndex < len(monthEntry.Days) {
-				tomorrow = &monthEntry.Days[tomorrowIndex]
-			} else if monthIndex+1 < len(sortedData) && len(sortedData[monthIndex+1].Days) > 0 {
-				// If tomorrow is in the next month
-				tomorrow = &sortedData[monthIndex+1].Days[0]
-			}
-		}
-	}
-
-	// fmt.Println(today, tomorrow)
+	today, tomorrow, monthIndex := SelectToday(sortedData, c.date)
 
 	return &types.CalendarResponse{
 		Today:    today,
@@ -199,6 +163,62 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 		Index:    monthIndex,
 		Calendar: sortedData,
 	}, nil
+}
+
+// PlannerPage returns the academic planner page for the semester containing
+// date. SRM's academic year runs July to June: July-December is the ODD
+// semester of year/year+1, January-June the EVEN semester of year-1/year.
+func PlannerPage(date time.Time) string {
+	year, semester := date.Year(), "ODD"
+	if date.Month() < time.July {
+		year, semester = date.Year()-1, "EVEN"
+	}
+	return fmt.Sprintf("Academic_Planner_%d_%02d_%s", year, (year+1)%100, semester)
+}
+
+// SelectToday locates date within sorted calendar data and returns the matching
+// day, the day after it, and the index of the month holding it.
+//
+// Days are matched on their date value rather than their position, because a
+// month may start partway through (a semester beginning mid-month) which leaves
+// Days[n] holding some day other than n+1. When date's month is absent from the
+// calendar entirely, both days are nil: the caller is outside the range this
+// planner covers, and reporting some unrelated day as "today" is worse than
+// reporting nothing.
+func SelectToday(sorted []types.CalendarMonth, date time.Time) (today, tomorrow *types.Day, monthIndex int) {
+	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	currentMonthName := monthNames[date.Month()-1]
+
+	monthIndex = -1
+	for i, entry := range sorted {
+		if strings.Contains(entry.Month, currentMonthName) {
+			monthIndex = i
+			break
+		}
+	}
+	if monthIndex == -1 {
+		return nil, nil, 0
+	}
+
+	days := sorted[monthIndex].Days
+	dayIndex := -1
+	for i := range days {
+		if d, err := strconv.Atoi(days[i].Date); err == nil && d == date.Day() {
+			dayIndex = i
+			break
+		}
+	}
+	if dayIndex == -1 {
+		return nil, nil, monthIndex
+	}
+
+	today = &days[dayIndex]
+	if dayIndex+1 < len(days) {
+		tomorrow = &days[dayIndex+1]
+	} else if monthIndex+1 < len(sorted) && len(sorted[monthIndex+1].Days) > 0 {
+		tomorrow = &sorted[monthIndex+1].Days[0]
+	}
+	return today, tomorrow, monthIndex
 }
 
 func SortCalendarData(data []types.CalendarMonth) []types.CalendarMonth {

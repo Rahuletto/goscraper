@@ -5,7 +5,6 @@ import (
 	"goscraper/src/helpers"
 	"goscraper/src/types"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -52,8 +51,13 @@ type CalendarEvent struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// SetEvent upserts on (month, date). /calendar only writes when gocal is empty
+// and does so from a goroutine, so two requests arriving before either finishes
+// both see an empty table and both insert the whole calendar, storing every day
+// twice. Upserting makes the write idempotent; it needs the unique index on
+// (month, date) documented in the README.
 func (h *CalendarDatabaseHelper) SetEvent(event CalendarEvent) error {
-	_, _, err := h.client.From("gocal").Insert(event, false, "", "", "").Execute()
+	_, _, err := h.client.From("gocal").Insert(event, true, "month,date", "", "").Execute()
 	return err
 }
 
@@ -99,41 +103,7 @@ func (h *CalendarDatabaseHelper) GetEvents() (types.CalendarResponse, error) {
 
 	sortedData := helpers.SortCalendarData(response)
 
-	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-	date := time.Now()
-	currentMonthName := monthNames[date.Month()-1]
-
-	var monthEntry types.CalendarMonth
-	var monthIndex int
-	for i, entry := range sortedData {
-		if strings.Contains(entry.Month, currentMonthName) {
-			monthEntry = entry
-			monthIndex = i
-			break
-		}
-	}
-
-	if monthEntry.Month == "" {
-		monthEntry = sortedData[0]
-		monthIndex = 0
-	}
-
-	var today, tomorrow *types.Day
-	if len(monthEntry.Days) > 0 {
-		todayIndex := time.Now().Day() - 1
-		if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
-			today = &monthEntry.Days[todayIndex]
-
-			// Get tomorrow's date
-			tomorrowIndex := todayIndex + 1
-			if tomorrowIndex < len(monthEntry.Days) {
-				tomorrow = &monthEntry.Days[tomorrowIndex]
-			} else if monthIndex+1 < len(sortedData) && len(sortedData[monthIndex+1].Days) > 0 {
-				// If tomorrow is in the next month
-				tomorrow = &sortedData[monthIndex+1].Days[0]
-			}
-		}
-	}
+	today, tomorrow, monthIndex := helpers.SelectToday(sortedData, time.Now())
 
 	resp := types.CalendarResponse{
 		Today:    today,
